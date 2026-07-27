@@ -16,9 +16,7 @@ the platform **4chan** — using unsupervised, transformer-based topic modeling
 
 ## ⚠️ A note on data sources (read this first)
 
-The original project plan assumed a keyword-search **REST API for CBC and
-Radio-Canada**. Those APIs **do not exist publicly**. To keep the project
-genuinely reproducible, Canuck4Frame instead collects articles through the
+To keep the project genuinely reproducible, Canuck4Frame instead collects articles through the
 free, key-less **[GDELT DOC 2.0 API](https://blog.gdeltproject.org/gdelt-doc-2-0-api-debuts/)**,
 which continuously indexes worldwide online news — including the four target
 outlets — and supports keyword + domain + date filtering.
