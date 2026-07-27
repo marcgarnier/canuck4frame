@@ -39,6 +39,9 @@ from tqdm import tqdm
 from .config import get_env
 
 GDELT_DOC_URL = "https://api.gdeltproject.org/api/v2/doc/doc"
+# GDELT enforces a hard limit of ~1 request every 5 seconds; exceeding it
+# returns HTTP 429 with a plain-text body. Stay comfortably above that.
+GDELT_MIN_INTERVAL = 6.0
 
 
 # --------------------------------------------------------------------------- #
@@ -53,14 +56,19 @@ def _gdelt_query(keyword: str, domain: str) -> str:
 
 @retry(
     retry=retry_if_exception_type(requests.RequestException),
-    wait=wait_exponential(multiplier=1, min=2, max=30),
-    stop=stop_after_attempt(4),
+    # Wait at least one full rate-limit window (6s) before retrying a 429.
+    wait=wait_exponential(multiplier=1, min=GDELT_MIN_INTERVAL, max=60),
+    stop=stop_after_attempt(5),
     reraise=True,
 )
 def _gdelt_request(params: dict) -> dict:
     resp = requests.get(GDELT_DOC_URL, params=params, timeout=30)
+    # GDELT signals rate-limiting with 429 (and sometimes a 200 + plain-text
+    # error page). Treat both as retryable RequestExceptions so tenacity backs
+    # off instead of us crashing or parsing junk.
+    if resp.status_code == 429:
+        raise requests.RequestException("GDELT rate limit (429); backing off")
     resp.raise_for_status()
-    # GDELT occasionally returns an HTML error page with a 200 status.
     if "application/json" not in resp.headers.get("Content-Type", ""):
         raise requests.RequestException(f"Non-JSON response from GDELT: {resp.text[:200]}")
     return resp.json()
@@ -81,7 +89,10 @@ def discover_articles(
     end = end_date.replace("-", "") + "235959"
 
     records: list[dict] = []
-    for outlet in outlets:
+    for i, outlet in enumerate(outlets):
+        # Respect GDELT's 1-request-per-5s limit between outlet queries.
+        if i > 0:
+            time.sleep(GDELT_MIN_INTERVAL)
         params = {
             "query": _gdelt_query(keyword, outlet["domain"]),
             "mode": "artlist",
