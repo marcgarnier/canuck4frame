@@ -1,0 +1,76 @@
+# Canuck4Frame — central configuration
+# All scripts and notebooks read this file via src.config.load_config().
+
+project:
+  name: canuck4frame
+  keyword: "4chan"          # search term (matched in title + body)
+  start_date: "2015-01-01"
+  end_date: "2025-12-31"
+
+# --- Data collection -------------------------------------------------------
+data_source:
+  # backend: "gdelt" (default, free, no key) | "mediacloud" | "sample"
+  backend: gdelt
+
+  # Government-funded / major Canadian outlets, keyed by domain.
+  # `lang` is the expected default language of the outlet (used as a hint;
+  # per-article language is still detected during preprocessing).
+  outlets:
+    - name: CBC News
+      domain: cbc.ca
+      lang: en
+    - name: Radio-Canada
+      domain: ici.radio-canada.ca
+      lang: fr
+    - name: Le Devoir
+      domain: ledevoir.com
+      lang: fr
+    - name: TVA Nouvelles
+      domain: tvanouvelles.ca
+      lang: fr
+
+  # Politeness settings for the article-body fetcher.
+  request_delay_seconds: 1.5
+  max_retries: 4
+  timeout_seconds: 20
+
+# --- Preprocessing ---------------------------------------------------------
+preprocess:
+  min_chars: 200            # drop stubs shorter than this many characters
+  # Terms that must NEVER be removed as stopwords (discriminative for framing).
+  protected_terms:
+    - 4chan
+    - meme
+    - memes
+    - 8chan
+    - anon
+    - imageboard
+
+# --- Topic modeling (BERTopic) --------------------------------------------
+modeling:
+  # "unified" -> one multilingual model over FR+EN.
+  # "split"   -> separate FR and EN models.
+  strategy: unified
+  embedding_model_multilingual: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+  embedding_model_en: sentence-transformers/all-mpnet-base-v2
+  embedding_model_fr: dangvantuan/sentence-camembert-base
+
+  umap:
+    n_neighbors: 15
+    n_components: 5          # drop to 2-3 for very small corpora
+    min_dist: 0.0
+    metric: cosine
+  hdbscan:
+    min_cluster_size: 5
+    min_samples: 1
+    metric: euclidean
+  min_topic_size: 5
+  nr_topics: null            # or an int / "auto" to reduce topics
+  random_state: 42
+
+# --- Paths -----------------------------------------------------------------
+paths:
+  raw: data/raw
+  processed: data/processed
+  results: data/results
+  sample: data/sample
