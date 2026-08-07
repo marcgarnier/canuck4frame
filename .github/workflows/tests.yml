@@ -22,13 +22,14 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
-      # The lightweight test suite (cleaning, language detection, GDELT query
-      # building, chi-square) only needs these deps — NOT the full ML stack —
-      # so CI stays fast and doesn't download torch / sentence-transformers.
+      # The lightweight test suite (cleaning, language detection, chi-square)
+      # only needs these deps — NOT the full ML stack — so CI stays fast and
+      # doesn't download torch / sentence-transformers. trafilatura is required
+      # because src/collect.py imports it at module load.
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pandas scipy requests beautifulsoup4 lxml \
+          pip install pandas scipy requests beautifulsoup4 lxml trafilatura \
                       tenacity tqdm langdetect python-dotenv pyyaml pytest
 
       - name: Run tests
