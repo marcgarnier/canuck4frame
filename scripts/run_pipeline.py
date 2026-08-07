@@ -2,13 +2,10 @@
 
 Examples
 --------
-Run everything on the bundled synthetic sample (no network, fast):
-    python scripts/run_pipeline.py --sample
-
-Collect the real corpus from GDELT, then run the full analysis:
+Collect the corpus (per config.yaml backend), then run the full analysis:
     python scripts/run_pipeline.py --collect
 
-Re-run only modeling + analysis on an already-processed corpus:
+Re-run only modeling + analysis on an already-collected corpus:
     python scripts/run_pipeline.py --skip-collect
 """
 
@@ -29,8 +26,7 @@ from src.config import load_config  # noqa: E402
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the Canuck4Frame pipeline.")
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("--collect", action="store_true", help="Collect fresh data from GDELT.")
-    group.add_argument("--sample", action="store_true", help="Use the bundled synthetic sample corpus.")
+    group.add_argument("--collect", action="store_true", help="Collect fresh data (per config backend).")
     group.add_argument("--skip-collect", action="store_true", help="Reuse an existing raw corpus.")
     args = parser.parse_args()
 
@@ -38,11 +34,8 @@ def main() -> None:
     results = config["paths"]["results"]
 
     # --- 1. Data ----------------------------------------------------------
-    if args.collect:
+    if not args.skip_collect:
         collect_mod.collect(config)
-    elif args.sample or not (args.skip_collect):
-        # Default to the sample if nothing else was requested.
-        collect_mod.load_sample(config)
 
     # --- 2. Preprocess ----------------------------------------------------
     print("\n== Preprocessing ==")

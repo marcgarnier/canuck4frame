@@ -29,6 +29,7 @@ from typing import Iterable, Iterator
 import requests
 from bs4 import BeautifulSoup
 from tenacity import (
+    RetryError,
     retry,
     retry_if_exception_type,
     stop_after_attempt,
@@ -167,7 +168,7 @@ def fetch_body(url: str, timeout: int = 20) -> str | None:
     """
     try:
         html = _download(url, timeout)
-    except requests.RequestException:
+    except (requests.RequestException, RetryError):
         return None
     if not html:
         return None
@@ -185,6 +186,53 @@ def fetch_body(url: str, timeout: int = 20) -> str | None:
 # --------------------------------------------------------------------------- #
 # 3. Orchestration                                                            #
 # --------------------------------------------------------------------------- #
+def discover_from_mediacloud_csv(csv_path: str | Path, outlets: list[dict]) -> list[dict]:
+    """Turn a MediaCloud CSV export into article metadata records.
+
+    MediaCloud's Online News search exports columns:
+    ``id, indexed_date, language, media_name, media_url, publish_date, title, url``
+    — metadata + title + url, but *no* article body (fetched later by
+    :func:`fetch_body`). We map those onto the same record shape produced by
+    :func:`discover_articles` so the rest of the pipeline is unchanged.
+    """
+    import pandas as pd
+
+    def _canon(dom: str) -> str:
+        return str(dom).split("//")[-1].removeprefix("www.").strip("/")
+
+    # Map a MediaCloud media_name back to the friendly outlet name from config.
+    name_by_domain = {_canon(o["domain"]): o["name"] for o in outlets}
+
+    def _match_name(media_name: str) -> str:
+        m = _canon(media_name)
+        for dom, name in name_by_domain.items():
+            if dom == m or dom in m or m in dom:
+                return name
+        return media_name
+
+    df = pd.read_csv(csv_path)
+    records: list[dict] = []
+    for _, row in df.iterrows():
+        url = str(row.get("url", "")).strip()
+        if not url:
+            continue
+        records.append(
+            {
+                "id": str(row.get("id"))
+                or url.rstrip("/").rsplit("/", 1)[-1],
+                "title": str(row.get("title", "")).strip(),
+                "url": url,
+                "date": _normalize_seendate(str(row.get("publish_date", "")).replace("-", "")),
+                "source": _match_name(row.get("media_name", "")),
+                "domain": _canon(row.get("media_name", "")),
+                "lang": (str(row.get("language", "")).strip() or None),
+                "body": None,  # filled in later by fetch_body()
+            }
+        )
+    print(f"  Loaded {len(records)} articles from MediaCloud CSV: {csv_path}")
+    return records
+
+
 def _iter_existing_ids(path: Path) -> set[str]:
     """Read already-collected article urls so re-runs are incremental."""
     if not path.exists():
@@ -209,13 +257,24 @@ def collect(config: dict, out_path: str | Path | None = None) -> Path:
     proj = config["project"]
     out_path = Path(out_path) if out_path else config["paths"]["raw"] / "articles_raw.jsonl"
 
-    print(f"[1/2] Discovering '{proj['keyword']}' articles via GDELT …")
-    metadata = discover_articles(
-        keyword=proj["keyword"],
-        outlets=ds["outlets"],
-        start_date=proj["start_date"],
-        end_date=proj["end_date"],
-    )
+    backend = ds.get("backend", "gdelt")
+    if backend == "mediacloud":
+        csv_path = ds.get("mediacloud_csv")
+        if not csv_path:
+            raise ValueError(
+                "backend 'mediacloud' requires 'data_source.mediacloud_csv' "
+                "(path to a MediaCloud CSV export) in config.yaml."
+            )
+        print(f"[1/2] Loading '{proj['keyword']}' articles from MediaCloud export …")
+        metadata = discover_from_mediacloud_csv(csv_path, ds["outlets"])
+    else:
+        print(f"[1/2] Discovering '{proj['keyword']}' articles via GDELT …")
+        metadata = discover_articles(
+            keyword=proj["keyword"],
+            outlets=ds["outlets"],
+            start_date=proj["start_date"],
+            end_date=proj["end_date"],
+        )
 
     already = _iter_existing_ids(out_path)
     todo = [m for m in metadata if m["url"] not in already]
@@ -233,14 +292,3 @@ def collect(config: dict, out_path: str | Path | None = None) -> Path:
 
     print(f"Done. Raw corpus at {out_path}")
     return out_path
-
-
-def load_sample(config: dict) -> Path:
-    """Copy the bundled sample corpus into data/raw for offline pipeline runs."""
-    import shutil
-
-    src = config["paths"]["sample"] / "sample_articles.jsonl"
-    dst = config["paths"]["raw"] / "articles_raw.jsonl"
-    shutil.copyfile(src, dst)
-    print(f"Loaded bundled sample corpus -> {dst}")
-    return dst

@@ -4,23 +4,45 @@
 project:
   name: canuck4frame
   keyword: "4chan"          # search term (matched in title + body)
-  start_date: "2015-01-01"
+  start_date: "2017-01-01"   # GDELT DOC 2.0 index does not reach before 2017
   end_date: "2025-12-31"
 
 # --- Data collection -------------------------------------------------------
 data_source:
-  # backend: "gdelt" (default, free, no key) | "mediacloud" | "sample"
-  backend: gdelt
+  # backend: "gdelt" | "mediacloud" (CSV export from search.mediacloud.org)
+  backend: mediacloud
 
-  # Government-funded / major Canadian outlets, keyed by domain.
-  # `lang` is the expected default language of the outlet (used as a hint;
-  # per-article language is still detected during preprocessing).
+  # Path to a MediaCloud "Online News" CSV export (id, language, media_name,
+  # publish_date, title, url). Used when backend == "mediacloud".
+  mediacloud_csv: data/mediacloud/mc_4chan_2017_2026.csv
+
+  # 10 principal Canadian outlets (public broadcasters + major titles),
+  # keyed by canonical domain. `lang` is the expected default language of the
+  # outlet (a hint; per-article language is still detected during preprocessing).
   outlets:
     - name: CBC News
       domain: cbc.ca
       lang: en
     - name: Radio-Canada
       domain: ici.radio-canada.ca
+      lang: fr
+    - name: The Globe and Mail
+      domain: theglobeandmail.com
+      lang: en
+    - name: National Post
+      domain: nationalpost.com
+      lang: en
+    - name: CTV News
+      domain: ctvnews.ca
+      lang: en
+    - name: Global News
+      domain: globalnews.ca
+      lang: en
+    - name: Toronto Star
+      domain: thestar.com
+      lang: en
+    - name: La Presse
+      domain: lapresse.ca
       lang: fr
     - name: Le Devoir
       domain: ledevoir.com
@@ -73,4 +95,3 @@ paths:
   raw: data/raw
   processed: data/processed
   results: data/results
-  sample: data/sample
