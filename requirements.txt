@@ -8,6 +8,7 @@ tqdm>=4.66
 requests>=2.31
 beautifulsoup4>=4.12
 lxml>=5.0
+trafilatura>=1.8
 tenacity>=8.2
 python-dotenv>=1.0
 langdetect>=1.0.9

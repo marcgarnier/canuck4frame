@@ -54,7 +54,7 @@ data_source:
   # Politeness settings for the article-body fetcher.
   request_delay_seconds: 1.5
   max_retries: 4
-  timeout_seconds: 20
+  timeout_seconds: 45   # CBC tarpits slow requests; give them time to complete
 
 # --- Preprocessing ---------------------------------------------------------
 preprocess:

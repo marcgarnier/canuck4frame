@@ -25,8 +25,10 @@ import json
 import time
 from pathlib import Path
 from typing import Iterable, Iterator
+from urllib.parse import urlparse
 
 import requests
+import trafilatura
 from bs4 import BeautifulSoup
 from tenacity import (
     RetryError,
@@ -144,17 +146,50 @@ def _lang_hint(gdelt_lang: str, outlet_default: str | None) -> str:
 # 2. Body fetching                                                            #
 # --------------------------------------------------------------------------- #
 def _user_agent() -> str:
-    return get_env("SCRAPER_USER_AGENT") or "Canuck4Frame research bot"
+    # A realistic browser UA; many outlets 403/timeout a bare bot string.
+    return get_env("SCRAPER_USER_AGENT") or (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    )
+
+
+def _browser_headers() -> dict[str, str]:
+    return {
+        "User-Agent": _user_agent(),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-CA,en;q=0.9,fr-CA;q=0.8,fr;q=0.7",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+    }
+
+
+# Per-domain politeness: some outlets (e.g. thestar.com) 429 aggressively when
+# many same-domain articles are fetched back to back. Space requests per host.
+_PER_DOMAIN_INTERVAL = 7.0
+_last_hit: dict[str, float] = {}
+
+
+def _throttle_domain(url: str) -> None:
+    host = urlparse(url).netloc
+    now = time.monotonic()
+    wait = _PER_DOMAIN_INTERVAL - (now - _last_hit.get(host, 0.0))
+    if wait > 0:
+        time.sleep(wait)
+    _last_hit[host] = time.monotonic()
 
 
 @retry(
     retry=retry_if_exception_type(requests.RequestException),
-    wait=wait_exponential(multiplier=1, min=2, max=20),
-    stop=stop_after_attempt(3),
+    # 429/500/503 raise HTTPError (a RequestException) and get retried with a
+    # generous backoff before we give up on the article.
+    wait=wait_exponential(multiplier=2, min=3, max=30),
+    stop=stop_after_attempt(4),
     reraise=False,  # a dead article shouldn't kill the whole run
 )
 def _download(url: str, timeout: int) -> str:
-    resp = requests.get(url, headers={"User-Agent": _user_agent()}, timeout=timeout)
+    _throttle_domain(url)
+    resp = requests.get(url, headers=_browser_headers(), timeout=timeout)
     resp.raise_for_status()
     return resp.text
 
@@ -162,9 +197,10 @@ def _download(url: str, timeout: int) -> str:
 def fetch_body(url: str, timeout: int = 20) -> str | None:
     """Download an article page and extract readable body text.
 
-    Uses a generic heuristic (concatenate <p> tags inside <article>/<main>,
-    falling back to all <p> tags) so it works across outlets without a
-    per-site parser. Returns ``None`` on failure.
+    Primary extractor is ``trafilatura`` (handles JSON-LD article bodies and
+    non-``<p>`` layouts that the generic heuristic misses); it falls back to
+    concatenating ``<p>`` tags inside ``<article>``/``<main>``. Returns ``None``
+    on failure (network error, hard block, or no extractable text).
     """
     try:
         html = _download(url, timeout)
@@ -173,14 +209,19 @@ def fetch_body(url: str, timeout: int = 20) -> str | None:
     if not html:
         return None
 
+    # Primary: trafilatura.
+    text = trafilatura.extract(html, include_comments=False, include_tables=False)
+    if text and len(text) >= 200:
+        return text
+
+    # Fallback: generic <p> heuristic.
     soup = BeautifulSoup(html, "lxml")
     for tag in soup(["script", "style", "nav", "header", "footer", "aside"]):
         tag.decompose()
-
     container = soup.find("article") or soup.find("main") or soup
     paragraphs = [p.get_text(" ", strip=True) for p in container.find_all("p")]
-    text = "\n".join(p for p in paragraphs if len(p) > 40)
-    return text or None
+    fallback = "\n".join(p for p in paragraphs if len(p) > 40)
+    return (text or fallback) or None
 
 
 # --------------------------------------------------------------------------- #
