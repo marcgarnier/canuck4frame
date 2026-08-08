@@ -22,6 +22,15 @@ data/results/*
 !data/raw/articles_missing.csv
 # The manual frame annotation IS committed (human coding, not regenerable):
 !data/results/frames_annotation.csv
+# Headline findings ARE committed (small; the point of the repo). The fitted
+# model, topic_summary.csv and topics_over_time.html stay out — bulky, regenerable.
+!data/results/frames_over_time.png
+!data/results/comparative_fr_en.png
+!data/results/temporal_analysis.csv
+!data/results/temporal_counts.csv
+!data/results/comparative_fr_en.csv
+!data/results/chi2_contingency.csv
+!data/results/chi2_fr_en_result.csv
 
 # Models / cache
 .cache/

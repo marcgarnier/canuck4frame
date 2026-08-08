@@ -1,0 +1,2 @@
+chi2,p_value,dof,n,cramers_v,significant,alpha,note
+21.39187645391718,0.0015596114730755512,6,231,0.25847445396853963,True,0.05,Warning: >20% of expected cell counts are < 5 — the chi-square approximation is unreliable here; treat the p-value with caution (consider Fisher's exact test or a larger corpus).

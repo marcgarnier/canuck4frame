@@ -164,6 +164,44 @@ Artifacts land in `data/results/`: `topic_summary.csv`, `frames_over_time.png`,
 
 ---
 
+## Results (reference run)
+
+BERTopic produced **21 topics** over 270 articles, leaving 39 (14 %) as outliers. Hand-coding
+(`data/results/frames_annotation.csv`) collapses them into **seven frames**:
+
+| Frame | Articles |
+|---|---|
+| `far_right_extremism` | 51 |
+| `violence_crime` | 43 |
+| `meme_internet_culture` | 37 |
+| `incel_misogyny` | 29 |
+| `conspiracy_qanon` | 25 |
+| `platform_tech` | 23 |
+| `politics_elections` | 23 |
+
+**Framing is event-driven and shifts over the decade** (`frames_over_time.png`): violence/crime opens
+the period at 61 % of 2017 articles (Las Vegas), conspiracy peaks at 47 % in 2020 (QAnon × COVID),
+far-right extremism takes 55 % then 62 % in 2022–2023, politics 50 % in 2024 (US election), and
+internet culture returns at 73 % in 2026 (a 4chan-born horror film reaching cinemas).
+
+**French and English coverage differ significantly** (`comparative_fr_en.png`):
+χ² = 21.39, *p* = 0.0016, Cramér's V = 0.26 (moderate effect).
+
+| Frame | EN | FR |
+|---|---|---|
+| meme_internet_culture | 11 % | **36 %** |
+| far_right_extremism | **24 %** | 13 % |
+| incel_misogyny | **15 %** | 4 % |
+| violence_crime | **20 %** | 13 % |
+| platform_tech | 9 % | 16 % |
+
+Anglophone outlets frame 4chan as a **threat** (extremism, incels, violence); Francophone outlets
+frame it as a **cultural phenomenon**. ⚠️ With 270 articles across 7 frames × 2 languages, >20 % of
+expected cell counts are < 5 — the χ² approximation is unreliable and the p-value should be read with
+caution (a Fisher exact test is the natural next step).
+
+---
+
 ## Methodology (summary)
 
 1. **Collect** — import the Media Cloud CSV export, download each body with
