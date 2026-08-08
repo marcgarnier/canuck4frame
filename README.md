@@ -25,7 +25,7 @@ worldwide, with deep, reliable per-outlet coverage.
 > **Why not GDELT?** The pipeline originally targeted GDELT DOC 2.0, but GDELT's
 > index contains essentially **no** "4chan" articles for the target Canadian
 > outlets (0 for cbc.ca, radio-canada.ca, ledevoir.com, tvanouvelles.ca). Media
-> Cloud returns a real corpus (≈340 articles across the ten outlets).
+> Cloud returns a real corpus (344 metadata rows across the ten outlets).
 
 ### How the corpus is obtained
 
@@ -40,10 +40,26 @@ exported to CSV:
 3. Point `config.yaml → data_source.mediacloud_csv` at that file.
 
 The export contains metadata only — `id, indexed_date, language, media_name,
-media_url, publish_date, title, url` — **not** the article body. Bodies are
-downloaded from each URL by the pipeline's polite scraper (`fetch_body`), with
-retries and incremental saves; pages that fail (paywalls, dead links, rate-limits)
-are stored with an empty body and dropped during preprocessing.
+media_url, publish_date, title, url` — **not** the article body. Bodies are then
+recovered in two passes:
+
+1. **Live fetch** (`fetch_body`) — download each URL and extract the main text
+   with **trafilatura** (falls back to a `<p>`-tag heuristic). It uses realistic
+   browser headers, **per-domain rate limiting** (so high-volume domains like
+   thestar.com stop returning 429), retries with backoff, and incremental JSONL
+   saves. Pages that hard-fail (paywalls, 404/410 dead links, 403 blocks,
+   tarpits) are written to `data/raw/articles_missing.csv`.
+2. **Wayback recovery** (`scripts/recover_wayback.py`) — for every row in
+   `articles_missing.csv`, look up the closest **Internet Archive (Wayback
+   Machine)** snapshot near the publish date, fetch the raw archived page, and
+   extract the body. Recovered articles are appended to the corpus with
+   `retrieved_via: "wayback"`; whatever is still unrecoverable stays in
+   `articles_missing.csv`. This step is idempotent and resumable.
+
+On the reference export this yields **280 usable articles** (221 EN / 59 FR) out
+of 344 — the remaining 64 exist neither on the live web nor in the archive.
+Notably, Wayback recovery is what unblocked TVA Nouvelles (0 → 10, hard 403 on the
+live site) and much of Toronto Star (paywalled).
 
 ### The ten outlets
 
@@ -83,10 +99,12 @@ canuck4frame/
 │   ├── 03_bertopic_modeling.ipynb
 │   └── 04_analysis_visualization.ipynb
 ├── scripts/
-│   └── run_pipeline.py       # end-to-end CLI
+│   ├── run_pipeline.py       # end-to-end CLI
+│   └── recover_wayback.py    # Wayback Machine recovery of missing bodies
 ├── data/
 │   ├── mediacloud/           # Media Cloud CSV export(s)
 │   └── raw/ processed/ results/   # generated (git-ignored)
+│       # raw/ holds articles_raw.jsonl (corpus) + articles_missing.csv (unrecovered)
 └── tests/
 ```
 
@@ -118,6 +136,13 @@ Make sure a Media Cloud CSV export sits in `data/mediacloud/` and is referenced 
 python scripts/run_pipeline.py --collect
 ```
 
+**Recover bodies that failed the live fetch, from the Wayback Machine** (optional
+but recommended — run after `--collect`, before analysis):
+
+```bash
+python scripts/recover_wayback.py
+```
+
 **Re-run analysis only, on an already-collected corpus:**
 
 ```bash
@@ -141,8 +166,9 @@ Artifacts land in `data/results/`: `topic_summary.csv`, `frames_over_time.png`,
 
 ## Methodology (summary)
 
-1. **Collect** — import the Media Cloud CSV export, then download each article body
-   from its URL with retries (`tenacity`) and incremental JSONL saves.
+1. **Collect** — import the Media Cloud CSV export, download each body with
+   trafilatura + per-domain throttling and incremental saves, then recover
+   failed URLs from the Wayback Machine (`scripts/recover_wayback.py`).
 2. **Preprocess** — strip boilerplate, drop stubs (`< min_chars`) and duplicates,
    detect language per article (`langdetect`), split into EN/FR sub-corpora.
 3. **Model** — BERTopic over multilingual sentence embeddings
@@ -185,8 +211,10 @@ conservative.
 
 - **Media Cloud coverage** shapes the corpus: indexing depth varies by outlet and
   the "4chan" keyword is niche, so counts per outlet are uneven.
-- The generic body scraper can miss or truncate paywalled articles; those rows are
-  dropped, which can bias which outlets survive to the modeling stage.
+- **Body-fetch attrition.** Of 344 metadata rows, 280 yielded usable text
+  (live fetch + Wayback); 64 are lost (dead links, hard blocks not archived). CBC
+  in particular is thin (7/22) because its old article URLs are poorly archived —
+  a residual bias in which outlets survive to modeling.
 - Frame labels are interpretive; inter-annotator agreement would strengthen them.
 - Future: supervised validation of frames, more outlets, sentiment/stance layering,
   and effect sizes (Cramér's V) reported alongside χ².

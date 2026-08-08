@@ -73,7 +73,7 @@ is run through the web UI and exported to CSV.
 > **Why Media Cloud and not GDELT.** GDELT DOC 2.0 was tested first and returned
 > **zero** "4chan" articles for the target outlets (and only ~4 for all of
 > Canada), in addition to rejecting pre-2017 start dates and rate-limiting hard.
-> Media Cloud returns a usable corpus (~340 articles) for the same outlets.
+> Media Cloud returns a usable corpus (344 metadata rows) for the same outlets.
 
 **Export procedure (reproducible).**
 
@@ -98,22 +98,52 @@ truth of the corpus for that run.
 
 ## 4. Collection (body retrieval)
 
-Implemented in `src/collect.py`.
+The Media Cloud export gives metadata only; bodies are retrieved in **two passes**.
+
+### 4a. Live fetch (`src/collect.py`)
 
 1. `discover_from_mediacloud_csv()` parses the CSV into per-article records and
    maps each `media_name` back to a friendly outlet name.
-2. For each record, `fetch_body()` downloads the article page and extracts main
-   text (concatenated `<p>` inside `<article>`/`<main>`, generic across sites),
-   with:
-   - polite delay between requests (`request_delay_seconds`, default 1.5 s),
-   - retries with exponential backoff (`tenacity`),
-   - **graceful failure** — a page that 429s / paywalls / 404s is stored with an
-     empty body rather than aborting the run.
+2. For each record, `fetch_body()` downloads the article page and extracts the main
+   text with **trafilatura** (handles JSON-LD article bodies and non-`<p>` layouts,
+   e.g. CTV), falling back to a `<p>`-in-`<article>`/`<main>` heuristic. It uses:
+   - **realistic browser headers** (a bare bot UA gets 403s / timeouts),
+   - **per-domain rate limiting** (`_PER_DOMAIN_INTERVAL`, 7 s) so high-volume
+     domains such as thestar.com stop returning 429,
+   - retries with exponential backoff on 429/5xx (`tenacity`), a 45 s timeout for
+     slow tarpits (CBC),
+   - **graceful failure** — a page that hard-fails (paywall, 404/410 dead link,
+     403 block, timeout) is stored with an empty body rather than aborting the run.
 3. Records are written incrementally to `data/raw/articles_raw.jsonl` (one JSON
    object per line), so an interrupted run keeps everything already fetched. Re-runs
    are idempotent: URLs already on disk are skipped.
+4. Rows that never yielded ≥200 characters are exported to
+   `data/raw/articles_missing.csv` (`source, domain, date, lang, title, url`).
 
-**Record fields:** `id, title, url, date, source, domain, lang, body`.
+### 4b. Wayback recovery (`scripts/recover_wayback.py`)
+
+Many live-fetch failures are **dead links** (404/410) or **hard blocks** (403,
+tarpits) whose content the Internet Archive captured while the article was live.
+For each row in `articles_missing.csv`:
+
+1. Query the Wayback **availability API** for the snapshot closest to the article's
+   publish date; on 429/5xx, back off and retry.
+2. Fetch the **raw** archived page (`…/<timestamp>id_/<url>`, no Wayback banner)
+   and extract the body with trafilatura.
+3. If ≥200 characters, append to the corpus with `retrieved_via: "wayback"`;
+   otherwise the row stays in `articles_missing.csv`.
+
+The step is **idempotent, resumable, and writes each hit immediately** (URLs
+already in the corpus are skipped on re-run). On the reference export it recovered
+**29** articles — including all of TVA Nouvelles (0 → 10, hard-blocked live) and
+much of Toronto Star (paywalled).
+
+**Outcome (reference export):** 344 metadata rows → **280 usable articles**
+(251 live + 29 Wayback), 221 EN / 59 FR; 64 unrecoverable (absent from both the
+live web and the archive).
+
+**Record fields:** `id, title, url, date, source, domain, lang, body`
+(+ `retrieved_via` for Wayback rows).
 
 ---
 
@@ -212,10 +242,14 @@ when the test is non-significant, given the modest sample.
 - **Pinned environment.** `requirements.txt` / Docker image.
 - **Committed corpus provenance.** The Media Cloud CSV export is committed under
   `data/mediacloud/`; generated data (`data/raw|processed|results`) is git-ignored
-  and regenerable from that CSV via `python scripts/run_pipeline.py --collect`.
+  and regenerable from that CSV via `python scripts/run_pipeline.py --collect`
+  followed by `python scripts/recover_wayback.py`.
+- **Traceable attrition.** `data/raw/articles_missing.csv` records exactly which
+  URLs could not be recovered (and Wayback rows carry `retrieved_via: "wayback"`),
+  so the gap between the 344 metadata rows and the 280 modeled articles is auditable.
 - **One-command run.** `run_pipeline.py` reproduces collection → preprocessing →
-  modeling → analysis (frame annotation is the one manual step between modeling
-  and the framed analysis).
+  modeling → analysis (Wayback recovery and frame annotation are the manual steps —
+  the latter between modeling and the framed analysis).
 
 ---
 
@@ -234,10 +268,12 @@ redistribution.
 - **Coverage bias.** Media Cloud indexing depth varies by outlet; the niche
   keyword yields uneven per-outlet counts, so cross-outlet comparisons are
   descriptive, not representative.
-- **Body-fetch attrition.** Paywalled/failed pages are dropped, which can skew
-  which outlets survive into modeling (notably paywalled titles).
-- **Small n.** A few hundred articles limits topic granularity and statistical
-  power; results are exploratory.
+- **Body-fetch attrition.** 64 of 344 rows never yielded text even after Wayback
+  recovery (dead links, un-archived hard blocks). CBC is the most affected (7/22),
+  so its voice is under-represented relative to its real coverage — a bias to keep
+  in mind when reading per-outlet results.
+- **Small n.** 280 articles limits topic granularity and statistical power;
+  results are exploratory.
 - **Interpretive labels.** Single-coder frame assignment lacks reliability
   statistics.
 - **Translation-free multilingual modeling.** A shared multilingual embedding
