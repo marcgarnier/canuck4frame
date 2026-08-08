@@ -13,6 +13,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 
+from .frames import topic_frame_names
+
 sns.set_theme(style="whitegrid")
 
 
@@ -35,7 +37,7 @@ def frames_over_time(
     if drop_outliers:
         data = data[data["topic"] != -1]
 
-    name_map = _topic_names(model)
+    name_map = topic_frame_names(model, results_dir)
     data["frame"] = data["topic"].map(name_map)
 
     counts = data.groupby(["year", "frame"]).size().unstack(fill_value=0)
@@ -78,7 +80,7 @@ def compare_fr_en(
     results_dir = Path(results_dir)
     data = _attach_topics(df, topics)
     data = data[data["topic"] != -1]
-    data["frame"] = data["topic"].map(_topic_names(model))
+    data["frame"] = data["topic"].map(topic_frame_names(model, results_dir))
 
     table = (
         data.groupby(["lang", "frame"]).size().unstack(fill_value=0).T
@@ -114,16 +116,10 @@ def wordclouds(model, results_dir: str | Path, top_n_topics: int = 8) -> None:
         freqs = dict(model.get_topic(tid))
         wc = WordCloud(width=400, height=300, background_color="white").generate_from_frequencies(freqs)
         ax.imshow(wc, interpolation="bilinear")
-        ax.set_title(_topic_names(model).get(tid, str(tid)), fontsize=9)
+        ax.set_title(topic_frame_names(model, results_dir).get(tid, str(tid)), fontsize=9)
         ax.axis("off")
     for ax in axes.ravel()[len(topic_ids):]:
         ax.axis("off")
     plt.tight_layout()
     plt.savefig(results_dir / "frame_wordclouds.png", dpi=150)
     plt.close()
-
-
-def _topic_names(model) -> dict[int, str]:
-    """Map topic id -> a readable label (BERTopic's auto name by default)."""
-    info = model.get_topic_info()
-    return dict(zip(info["Topic"], info["Name"]))

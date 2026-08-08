@@ -20,6 +20,8 @@ data/results/*
 !data/results/.gitkeep
 # Provenance of unrecoverable links IS committed (audit trail for attrition):
 !data/raw/articles_missing.csv
+# The manual frame annotation IS committed (human coding, not regenerable):
+!data/results/frames_annotation.csv
 
 # Models / cache
 .cache/

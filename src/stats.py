@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from .frames import topic_frame_names
+
 
 @dataclass
 class ChiSquareResult:
@@ -25,11 +27,6 @@ class ChiSquareResult:
 
     def as_dict(self) -> dict:
         return asdict(self)
-
-
-def _topic_names(model) -> dict[int, str]:
-    info = model.get_topic_info()
-    return dict(zip(info["Topic"], info["Name"]))
 
 
 def cramers_v(chi2: float, contingency: pd.DataFrame) -> float:
@@ -51,6 +48,7 @@ def frame_contingency(
     df: pd.DataFrame,
     topics: list[int],
     model,
+    results_dir: str | Path | None = None,
     drop_outliers: bool = True,
 ) -> pd.DataFrame:
     """Build a language × frame count table (rows=lang, cols=frame)."""
@@ -58,7 +56,7 @@ def frame_contingency(
     data["topic"] = topics
     if drop_outliers:
         data = data[data["topic"] != -1]
-    data["frame"] = data["topic"].map(_topic_names(model))
+    data["frame"] = data["topic"].map(topic_frame_names(model, results_dir))
     return pd.crosstab(data["lang"], data["frame"])
 
 
@@ -77,7 +75,7 @@ def chi_square_fr_en(
     """
     from scipy.stats import chi2_contingency
 
-    table = frame_contingency(df, topics, model)
+    table = frame_contingency(df, topics, model, results_dir=results_dir)
 
     if table.shape[0] < 2 or table.shape[1] < 2:
         return ChiSquareResult(
