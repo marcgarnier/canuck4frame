@@ -18,9 +18,8 @@ data/results/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/results/.gitkeep
-# The small, versioned sample corpus is the ONLY data committed:
-!data/sample/
-!data/sample/*
+# Provenance of unrecoverable links IS committed (audit trail for attrition):
+!data/raw/articles_missing.csv
 
 # Models / cache
 .cache/
